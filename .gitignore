@@ -1,3 +1,9 @@
+# Individual Rosters that have emails
+Playoff Fantasy Roster*.csv
+Playoff Fantasy Roster*.xls*
+Consolidated Rosters, Gen*.csv
+Archived Consolidated Rosters
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
