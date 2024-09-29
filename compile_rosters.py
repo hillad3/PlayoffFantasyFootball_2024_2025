@@ -6,10 +6,10 @@ from datetime import datetime
 
 # %%
 # update with roster directory
-project_path = 'C://Users//adamx//Local Documents//PlayoffFantasyFootball_2024_2025//'
-roster_folder = 'Individual Rosters//'
-files = os.listdir(project_path + roster_folder)
+roster_folder = 'Data/Individual Rosters/'
+files = os.listdir(roster_folder)
 
+# %%
 for file in files:
   if file.endswith('.xlsx') and 'Playoff Fantasy Roster 2024' in file:
     print('WARNING: There are *.xlsx files still remaining in the directory: ' + file)
@@ -72,9 +72,4 @@ df.head()
 
 # %%
 output_file = 'Consolidated Rosters, Gen ' + str(datetime.now().strftime('%Y-%m-%d %H%M')) + ".csv"
-
-df.to_csv(output_file, index=False)
-
-
-
-# %%
+df.to_csv("Data/" + output_file, index=False)
