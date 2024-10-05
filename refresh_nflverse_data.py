@@ -23,11 +23,30 @@ player_stats_off_url = 'https://github.com/nflverse/nflverse-data/releases/downl
 player_stats_def_url = 'https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_def_2024.parquet?raw=true'
 player_stats_kicking_url = 'https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_kicking_2024.parquet?raw=true'
 
+# the teams data is mostly static for each year, so this does not need to be updated frequently
+teams_url = 'https://github.com/nflverse/nfldata/blob/master/data/teams.csv?raw=true'
+refresh_teams = False
+
 # local filePath helper
 data_path = './Data/'
 
 # %%
-def get_nflverse_timestamp(url: str) -> str:
+def get_teams_csv(update_teams : bool = refresh_teams, url : str = teams_url) -> None:
+  if not update_teams:
+    logging.info("nflreadr teams updated")
+    return
+  else:
+    req = get(url)
+    if req.status_code == 200:
+      open(data_path + 'nflreadr_teams.csv', 'wb').write(req.content)
+      logging.info("nflreadr teams updated")
+    else:
+      logging.warning(f"Failed to retrieve the timestamp.txt file. Status code: {req.status_code}")
+
+get_teams_csv() # use default values
+
+# %%
+def get_nflverse_timestamp(url : str) -> str:
   """
   Each nflverse data repository has a timestamp key in a 
   timestamp.txt file. This function modifies the passed in 
@@ -45,7 +64,7 @@ def get_nflverse_timestamp(url: str) -> str:
     logging.info("nflverse asset timestamp: " + date_time + "\n")
     return date_time
   else:
-    print(f"Failed to retrieve the timestamp.txt file. Status code: {req.status_code}")
+    logging.warning(f"Failed to retrieve the timestamp.txt file. Status code: {req.status_code}")
     return '9999-99-99 999999 EST' # return dummy that will always result in the data file being updated
 
 # %%
