@@ -33,13 +33,13 @@ data_path = './Data/'
 # %%
 def get_teams_csv(update_teams : bool = refresh_teams, url : str = teams_url) -> None:
   if not update_teams:
-    logging.info("nflreadr teams updated")
+    logging.warning("nflreadr teams not updated")
     return
   else:
     req = get(url)
     if req.status_code == 200:
       open(data_path + 'nflreadr_teams.csv', 'wb').write(req.content)
-      logging.info("nflreadr teams updated")
+      logging.warning("nflreadr teams updated")
     else:
       logging.warning(f"Failed to retrieve the timestamp.txt file. Status code: {req.status_code}")
 
