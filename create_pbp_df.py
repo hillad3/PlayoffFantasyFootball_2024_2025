@@ -1,11 +1,15 @@
 # %%
 import pandas as pd
+from typing import List
 
 # %%
-def get(file : str, path : str = './Data/') -> pd.DataFrame:
+def get(file : str, 
+        season_type : List[str] = ['Regular','Post'], 
+        path : str = './Data/') -> pd.DataFrame:
   pbp = pd.read_parquet(path = path + file, engine='pyarrow')
   pbp.loc[(pbp['season_type']=="REG"),'season_type'] = "Regular"
   pbp.loc[(pbp['season_type']=="POST"),'season_type'] = "Post"
+  pbp = pbp[pbp['season_type'].isin(season_type)]
   pbp = pbp[[
     'game_id',
     'game_date',
