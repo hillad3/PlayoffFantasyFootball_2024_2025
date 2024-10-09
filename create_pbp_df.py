@@ -1,10 +1,9 @@
 # %%
 import pandas as pd
-from typing import List
 
 # %%
 def get(file : str, 
-        season_type : List[str] = ['Regular','Post'], 
+        season_type,
         path : str = './Data/') -> pd.DataFrame:
   pbp = pd.read_parquet(path = path + file, engine='pyarrow')
   pbp.loc[(pbp['season_type']=="REG"),'season_type'] = "Regular"
