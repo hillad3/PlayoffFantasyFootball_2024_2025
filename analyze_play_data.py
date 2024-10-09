@@ -9,9 +9,11 @@ logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=loggi
 import create_teams_df
 import create_roster_df
 import create_pbp_df
+import create_k_player_df
 
 # %%
-season : int = 2024
+season_type = ['Regular','Post'] # can be Regular or Post. This is an input to determining scope of pbp and player dfs
+season_year : int = 2024
 data_path : str = './Data/'
 
 # TODO needs to be updated after playoff teams are announced
@@ -22,7 +24,7 @@ playoff_teams = [
 ]
 
 # %%
-teams = create_teams_df.get(season)
+teams = create_teams_df.get(season_year)
 teams.head()
 
 # %% list of team names
@@ -36,8 +38,13 @@ roster.head()
 
 # %%
 pbp_file = 'play_by_play_2024, 2024-10-07 052118 EDT.parquet'
-pbp = create_pbp_df.get(file = pbp_file)
+pbp = create_pbp_df.get(file = pbp_file, season_type = season_type)
 pbp.head()
+
+# %%
+k_file = 'player_stats_kicking_2024, 2024-10-07 052613 EDT.parquet'
+k = create_k_player_df.get(file=k_file,season_type=season_type)
+k.head()
 
 # %% 
 o_file = 'player_stats_2024, 2024-10-07 052613 EDT.parquet'
@@ -48,11 +55,5 @@ o.info()
 d_file ='player_stats_def_2024, 2024-10-07 052613 EDT.parquet'
 d = pd.read_parquet(data_path + d_file, engine='pyarrow')
 d.info()
-
-# %%
-k_file = 'player_stats_kicking_2024, 2024-10-07 052613 EDT.parquet'
-k = pd.read_parquet(data_path + k_file, engine='pyarrow')
-k.info()
-
 
 # %%
