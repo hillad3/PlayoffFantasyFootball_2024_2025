@@ -2,7 +2,7 @@
 import pandas as pd
 
 # %%
-def get(file : str,
+def make(file : str,
         season_type, 
         data_path = './Data/') -> pd.DataFrame:
   df = pd.read_parquet(data_path + file, engine='pyarrow')
@@ -47,6 +47,8 @@ def get(file : str,
   df.loc[df['stat_label']=='fg_made_missed','fantasy_points'] = df['football_value'] * -1
   df.loc[df['stat_label']=='pat_made','fantasy_points'] = df['football_value'] * 1
   df.loc[df['stat_label']=='pat_missed','fantasy_points'] = df['football_value'] * -1
+
+  df['fantasy_points'] = df['fantasy_points'].astype('Int64') # fantasy points are always integers
   
   df.loc[df['fantasy_points'].isna(),'fantasy_points'] = 0 # fill in any NaNs if a rule did not apply
 
