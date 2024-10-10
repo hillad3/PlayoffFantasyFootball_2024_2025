@@ -6,10 +6,11 @@ import logging
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %I:%M %p')
 
 # %% these are custom scripts for my project
-import create_teams_df
-import create_roster_df
-import create_pbp_df
-import create_k_player_df
+import team_info
+import roster_lineup
+import play_by_play_stats
+import kicker_stats
+import offense_stats
 
 # %%
 season_type = ['Regular','Post'] # can be Regular or Post. This is an input to determining scope of pbp and player dfs
@@ -24,7 +25,7 @@ playoff_teams = [
 ]
 
 # %%
-teams = create_teams_df.get(season_year)
+teams = team_info.get(season_year)
 teams.head()
 
 # %% list of team names
@@ -33,22 +34,26 @@ print(season_teams)
 
 # %%
 roster_file = 'roster_2024, 2024-10-07 031250 EDT.parquet'
-roster = create_roster_df.get(roster_file, teams = teams)
+roster = roster_lineup.get(roster_file, teams = teams)
 roster.head()
 
 # %%
 pbp_file = 'play_by_play_2024, 2024-10-07 052118 EDT.parquet'
-pbp = create_pbp_df.get(file = pbp_file, season_type = season_type)
-pbp.head()
+pbp = play_by_play_stats.make(file = pbp_file, season_type = season_type)
+pbp.info()
+
+# %%
+bonus_stats = play_by_play_stats.offense_bonuses(pbp)
+bonus_stats.info(10)
 
 # %%
 k_file = 'player_stats_kicking_2024, 2024-10-07 052613 EDT.parquet'
-k = create_k_player_df.get(file=k_file,season_type=season_type)
-k.head()
+k = kicker_stats.make(file=k_file, season_type=season_type)
+k.info()
 
 # %% 
 o_file = 'player_stats_2024, 2024-10-07 052613 EDT.parquet'
-o = pd.read_parquet(data_path + o_file, engine='pyarrow')
+o = offense_stats.make(file=o_file, season_type=season_type)
 o.info()
 
 # %%
