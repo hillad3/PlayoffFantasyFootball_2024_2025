@@ -2,6 +2,7 @@
 import pandas as pd
 import nfl_data_py as nfl
 import numpy as np
+from functools import reduce
 import logging
 
 # %%
@@ -102,7 +103,7 @@ def offense_stats(file : str,
   return df
 
 # %%
-def kickers(file : str, season_type, data_path = './Data/') -> pd.DataFrame:
+def kicker_stats(file : str, season_type, data_path = './Data/') -> pd.DataFrame:
   df = pd.read_parquet(data_path + file, engine='pyarrow')
   df.loc[df['season_type']=='REG','season_type'] = 'Regular'
   df.loc[df['season_type']=='POST','season_type'] = 'Post'
@@ -152,6 +153,39 @@ def kickers(file : str, season_type, data_path = './Data/') -> pd.DataFrame:
 
   return df
 
+# %%
+def defense_stats(file : str,
+        season_type, 
+        data_path = './Data/') -> pd.DataFrame:
+  df = pd.read_parquet(data_path + file, engine='pyarrow')
+  df.loc[df['season_type']=='REG','season_type'] = 'Regular'
+  df.loc[df['season_type']=='POST','season_type'] = 'Post'
+  df = df[df['season_type'].isin(season_type)]
+  df.rename(columns = {'team' : 'team_abbr'}, inplace=True)
+
+  std_cols = [
+    'week',
+    'season_type',
+    'player_id',
+    'player_name',
+    'team_abbr'   
+  ]
+
+  stat_cols = [
+    'def_sacks',
+    'def_interceptions',
+    'def_fumbles',
+    'def_safety'
+  ]
+
+  df = df.melt(
+    id_vars = std_cols,
+    value_vars = stat_cols,
+    var_name = 'stat_label',
+    value_name = 'football_value'
+  )
+
+  return df
 
 # %%
 def play_by_plays(file : str, 
@@ -231,21 +265,20 @@ def play_by_plays(file : str,
   ]]
   return pbp
 
-tmp1 = play_by_plays('play_by_play_2024, 2024-10-28 052227 EDT.parquet', ['Regular','Post'])
+pbp = play_by_plays('play_by_play_2024, 2024-10-28 052227 EDT.parquet', ['Regular','Post'])
 
 # %% 
 def offense_bonus(file : str, 
         season_type,
         path : str = './Data/') -> pd.DataFrame:
-  pbp = play_by_plays(file, season_type, path)
 
-  # create an empty list to hold each unique fantasy football points dataset
-  bonus = [] 
+  # create the play-by-play data that will be used to determine the bonuses      
+  pbp = play_by_plays(file, season_type, path)
 
   # offensive bonus for touchdown with pass over 40 yards for qb
   forty_yd_plus_passing_td_qb_bonus = pbp[(pbp['pass_touchdown']==1) & (pbp['passing_yards']>=40)].copy()
+  forty_yd_plus_passing_td_qb_bonus = forty_yd_plus_passing_td_qb_bonus[['week','season_type','posteam','passer_player_id','passer_player_name','pass_touchdown','passing_yards']]
   forty_yd_plus_passing_td_qb_bonus.rename(columns={'posteam':'team_abbr','passer_player_name':'player_name','passer_player_id':'player_id'}, inplace=True)
-  forty_yd_plus_passing_td_qb_bonus = forty_yd_plus_passing_td_qb_bonus[['week','season_type','team_abbr','player_id','player_name','pass_touchdown','passing_yards']]
   forty_yd_plus_passing_td_qb_bonus['stat_label'] = "forty_yd_plus_passing_td_qb_bonus"
   forty_yd_plus_passing_td_qb_bonus = forty_yd_plus_passing_td_qb_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_passing_td_qb_bonus.rename(columns={'size':'football_value'},inplace=True)
@@ -253,8 +286,8 @@ def offense_bonus(file : str,
 
   # offensive bonus for touchdown with pass over 40 yards for receiver
   forty_yd_plus_passing_td_receiver_bonus = pbp[(pbp['pass_touchdown']==1) & (pbp['passing_yards']>=40)].copy()
+  forty_yd_plus_passing_td_receiver_bonus = forty_yd_plus_passing_td_receiver_bonus[['week','season_type','posteam','receiver_player_id','receiver_player_name','pass_touchdown','passing_yards']]
   forty_yd_plus_passing_td_receiver_bonus.rename(columns={'posteam':'team_abbr','receiver_player_name':'player_name','receiver_player_id':'player_id'}, inplace=True)
-  forty_yd_plus_passing_td_receiver_bonus = forty_yd_plus_passing_td_receiver_bonus[['week','season_type','team_abbr','player_id','player_name','pass_touchdown','passing_yards']]
   forty_yd_plus_passing_td_receiver_bonus['stat_label'] = "forty_yd_plus_passing_td_receiver_bonus"
   forty_yd_plus_passing_td_receiver_bonus = forty_yd_plus_passing_td_receiver_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_passing_td_receiver_bonus.rename(columns={'size':'football_value'},inplace=True)
@@ -262,8 +295,8 @@ def offense_bonus(file : str,
 
   # offensive bonus for touchdown with rush over 40 yards for rusher
   forty_yd_plus_rushing_td_bonus = pbp[(pbp['rush_touchdown']==1) & (pbp['rushing_yards']>=40)].copy()
+  forty_yd_plus_rushing_td_bonus = forty_yd_plus_rushing_td_bonus[['week','season_type','posteam','rusher_player_id','rusher_player_name','rush_touchdown','rushing_yards']]
   forty_yd_plus_rushing_td_bonus.rename(columns={'posteam':'team_abbr','rusher_player_name':'player_name','rusher_player_id':'player_id'}, inplace=True)
-  forty_yd_plus_rushing_td_bonus = forty_yd_plus_rushing_td_bonus[['week','season_type','team_abbr','player_id','player_name','rush_touchdown','rushing_yards']]
   forty_yd_plus_rushing_td_bonus['stat_label'] = "forty_yd_plus_rushing_td_bonus"
   forty_yd_plus_rushing_td_bonus = forty_yd_plus_rushing_td_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_rushing_td_bonus.rename(columns={'size':'football_value'},inplace=True)
@@ -274,31 +307,28 @@ def offense_bonus(file : str,
   # in a kickoff, the receiving team is listed as posteam
   # in a punt, the receiving team is listed as the defteam
   forty_yd_plus_kickoff_return_td_bonus = pbp[(pbp['play_type']=="kickoff") & (pbp['return_touchdown']==1) & (pbp['return_yards']>=40)].copy()
+  forty_yd_plus_kickoff_return_td_bonus = forty_yd_plus_kickoff_return_td_bonus[['week','season_type','posteam','kickoff_returner_player_id','kickoff_returner_player_name','return_touchdown','return_yards']]
   forty_yd_plus_kickoff_return_td_bonus.rename(columns={'posteam':'team_abbr','kickoff_returner_player_name':'player_name','kickoff_returner_player_id':'player_id'}, inplace=True)
-  forty_yd_plus_kickoff_return_td_bonus = forty_yd_plus_kickoff_return_td_bonus[['week','season_type','team_abbr','player_id','player_name','return_touchdown','return_yards']]
   forty_yd_plus_kickoff_return_td_bonus['stat_label'] = "forty_yd_plus_kickoff_return_td_bonus"
   forty_yd_plus_kickoff_return_td_bonus = forty_yd_plus_kickoff_return_td_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_kickoff_return_td_bonus.rename(columns={'size':'football_value'},inplace=True)
   forty_yd_plus_kickoff_return_td_bonus['fantasy_value'] = forty_yd_plus_kickoff_return_td_bonus['football_value']*2
 
   forty_yd_plus_punt_return_td_bonus = pbp[(pbp['play_type']=="punt") & (pbp['return_touchdown']==1) & (pbp['return_yards']>=40)].copy()
-  forty_yd_plus_punt_return_td_bonus.rename(columns={'posteam':'team_abbr','punt_returner_player_name':'player_name','punt_returner_player_id':'player_id'}, inplace=True)
-  forty_yd_plus_punt_return_td_bonus = forty_yd_plus_punt_return_td_bonus[['week','season_type','team_abbr','player_id','player_name','return_touchdown','return_yards']]
+  forty_yd_plus_punt_return_td_bonus = forty_yd_plus_punt_return_td_bonus[['week','season_type','defteam','punt_returner_player_id','punt_returner_player_name','return_touchdown','return_yards']]
+  forty_yd_plus_punt_return_td_bonus.rename(columns={'defteam':'team_abbr','punt_returner_player_name':'player_name','punt_returner_player_id':'player_id'}, inplace=True)
   forty_yd_plus_punt_return_td_bonus['stat_label'] = "forty_yd_plus_punt_return_td_bonus"
   forty_yd_plus_punt_return_td_bonus = forty_yd_plus_punt_return_td_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_punt_return_td_bonus.rename(columns={'size':'football_value'},inplace=True)
   forty_yd_plus_punt_return_td_bonus['fantasy_value'] = forty_yd_plus_punt_return_td_bonus['football_value']*2
 
-  bonus = [forty_yd_plus_passing_td_qb_bonus, 
+  o_bonuses = pd.concat([forty_yd_plus_passing_td_qb_bonus, 
            forty_yd_plus_passing_td_receiver_bonus, 
            forty_yd_plus_rushing_td_bonus, 
            forty_yd_plus_kickoff_return_td_bonus, 
-           forty_yd_plus_punt_return_td_bonus]  
+           forty_yd_plus_punt_return_td_bonus])
   
-  return bonus
-
-tmp2 = offense_bonus('play_by_play_2024, 2024-10-28 052227 EDT.parquet', ['Regular','Post'])
-print(tmp2[3].head())
+  return o_bonuses
   
   # bonus <- rbindlist(bonus)
   
@@ -346,80 +376,109 @@ print(tmp2[3].head())
 def defense_bonus(file : str, 
         season_type,
         path : str = './Data/') -> pd.DataFrame:
-  return None
-  # pbp = play_by_plays(file, season_type, path):
-  # # create a list to hold each unique fantasy football points dataset
-  # def <- list()
+
+  pbp = play_by_plays(file, season_type, path)
+
+  # defensive bonus for sacks
+  # when sack==1, either there is a single person sack and "sack_player_name" will not be null, or
+  # there are two half_sack_players (but sack_player_name will be null). sack==1 includes instances when
+  # then the qb gets back to the line of scrimmage (approximately) so it is possible to exclude those
+  # instances by applyling a filter of yards_gained < 0L. Finally, there may be instances where the sack_player 
+  # is not recorded but there was still a sack recorded (seemingly if a fumble happens in the same play).
+  # Therefore it is best to only filter by sack==1.
+  sack_bonus = pbp[(pbp['sack']==1)].copy()
+  sack_bonus = sack_bonus[['week','season_type','defteam','sack_player_id','sack_player_name','half_sack_1_player_id','half_sack_1_player_name','half_sack_2_player_id','half_sack_2_player_name']]
+  sack_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
+  sack_bonus['stat_label'] = "sack_bonus"
+  sack_bonus = sack_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  sack_bonus.rename(columns={'size':'football_value'},inplace=True)
+  sack_bonus['fantasy_value'] = sack_bonus['football_value']
+
+  # defensive bonus for safeties
+  safety_bonus = pbp[(pbp['safety']==1) & (pbp['safety_player_id'].notnull())].copy()
+  safety_bonus = safety_bonus[['week','season_type','defteam','safety_player_id','safety_player_name']]
+  safety_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
+  safety_bonus['stat_label'] = "safety_bonus"
+  safety_bonus = safety_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  safety_bonus.rename(columns={'size':'football_value'},inplace=True)
+  safety_bonus['fantasy_value'] = safety_bonus['football_value']
+
+  # defensive bonus for fumble recovery
+  fumble_recovery_bonus = pbp[(pbp['fumble']==1) & (pbp['fumble_lost']==1) & (pbp['play_type']!="punt")].copy()
+  fumble_recovery_bonus = fumble_recovery_bonus[['week','season_type','defteam','fumbled_1_player_id','fumbled_1_player_name','fumble_recovery_1_player_id','fumble_recovery_1_player_name']]
+  fumble_recovery_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
+  fumble_recovery_bonus['stat_label'] = "fumble_recovery_bonus"
+  fumble_recovery_bonus = fumble_recovery_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  fumble_recovery_bonus.rename(columns={'size':'football_value'},inplace=True)
+  fumble_recovery_bonus['fantasy_value'] = fumble_recovery_bonus['football_value']*2
+
+  # defensive bonus for fumble recovery during a punt; use posteam as team_abbr
+  fumble_recovery_punt_bonus = pbp[(pbp['fumble']==1) & (pbp['fumble_lost']==1) & (pbp['play_type']=="punt")].copy()
+  fumble_recovery_punt_bonus = fumble_recovery_punt_bonus[['week','season_type','posteam','fumbled_1_player_id','fumbled_1_player_name','fumble_recovery_1_player_id','fumble_recovery_1_player_name']]
+  fumble_recovery_punt_bonus.rename(columns={'posteam':'team_abbr'}, inplace=True)
+  fumble_recovery_punt_bonus['stat_label'] = "fumble_recovery_punt_bonus"
+  fumble_recovery_punt_bonus = fumble_recovery_punt_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  fumble_recovery_punt_bonus.rename(columns={'size':'football_value'},inplace=True)
+  fumble_recovery_punt_bonus['fantasy_value'] = fumble_recovery_punt_bonus['football_value']*2
+
+  # defensive bonus for interception
+  interception_bonus = pbp[(pbp['interception']==1)].copy()
+  interception_bonus = interception_bonus[['week','season_type','defteam','interception_player_id','interception_player_name']]
+  interception_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
+  interception_bonus['stat_label'] = "interception_bonus"
+  interception_bonus = interception_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  interception_bonus.rename(columns={'size':'football_value'},inplace=True)
+  interception_bonus['fantasy_value'] = interception_bonus['football_value']*2
+
+  # defensive bonus for block
+  block_bonus = pbp[(pbp['blocked_player_name'].notnull())].copy()
+  block_bonus = block_bonus[['week','season_type','defteam','blocked_player_id','blocked_player_name']]
+  block_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
+  block_bonus['stat_label'] = "block_bonus"
+  block_bonus = block_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  block_bonus.rename(columns={'size':'football_value'},inplace=True)
+  block_bonus['fantasy_value'] = block_bonus['football_value']*2
   
-  # ## defensive bonus for sacks
-  # # If you want to exclude sack where the QB got back to the line of scrimmage, then add filter 
-  # # condition of yards_gained < 0L. There are some instances where the sack_player is not recorded 
-  # # but there was still a sack recorded (seemingly if a fumble happens in the same play)
-  # def[["def_sack"]] <- dt[
-  #   sack == 1L,
-  #   by = .(week, season_type, team_abbr = defteam),
-  #   list(stat_label="def_sack", football_values = .N, fantasy_points = .N*1L)
-  # ]
+  # defensive bonus for defensive td return
+  def_td_return_bonus = pbp[(pbp['return_touchdown']==1) & (pbp['play_type'].isin(['pass','run']))].copy()
+  def_td_return_bonus = def_td_return_bonus[['week','season_type','defteam']]
+  def_td_return_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
+  def_td_return_bonus['stat_label'] = "def_td_return_bonus"
+  def_td_return_bonus = def_td_return_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  def_td_return_bonus.rename(columns={'size':'football_value'},inplace=True)
+  def_td_return_bonus['fantasy_value'] = def_td_return_bonus['football_value']*6
+
+  # defensive bonus for special teams td return
+  punt_def_td_return_bonus = pbp[(pbp['return_touchdown']==1) & (pbp['play_type'].isin(['punt']))].copy()
+  punt_def_td_return_bonus = punt_def_td_return_bonus[['week','season_type','defteam',]]
+  punt_def_td_return_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
+  punt_def_td_return_bonus['stat_label'] = "punt_def_td_return_bonus"
+  punt_def_td_return_bonus = punt_def_td_return_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  punt_def_td_return_bonus.rename(columns={'size':'football_value'},inplace=True)
+  punt_def_td_return_bonus['fantasy_value'] = punt_def_td_return_bonus['football_value']*6
+
+  # defensive bonus for special teams td return; use posteam for kickoff
+  kickoff_def_td_return_bonus = pbp[(pbp['return_touchdown']==1) & (pbp['play_type'].isin(['kickoff']))].copy()
+  kickoff_def_td_return_bonus = kickoff_def_td_return_bonus[['week','season_type','posteam']]
+  kickoff_def_td_return_bonus.rename(columns={'posteam':'team_abbr'}, inplace=True)
+  kickoff_def_td_return_bonus['stat_label'] = "kickoff_def_td_return_bonus"
+  kickoff_def_td_return_bonus = kickoff_def_td_return_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
+  kickoff_def_td_return_bonus.rename(columns={'size':'football_value'},inplace=True)
+  kickoff_def_td_return_bonus['fantasy_value'] = kickoff_def_td_return_bonus['football_value']*6
+
+
+  d_bonuses = pd.concat([sack_bonus,
+    safety_bonus,
+    fumble_recovery_bonus,
+    fumble_recovery_punt_bonus,
+    interception_bonus,
+    block_bonus,
+    def_td_return_bonus,
+    punt_def_td_return_bonus,
+    kickoff_def_td_return_bonus])
   
-  # # defensive bonus for safeties
-  # def[["def_safety"]] <- dt[
-  #   safety == 1L & !is.na(safety_player_id),
-  #   by = .(week, season_type, team_abbr = defteam),
-  #   list(stat_label="def_safety", football_values = .N, fantasy_points = .N*1L)
-  # ]
+  return d_bonuses
   
-  # # defensive bonus for fumble recovery
-  # def[["def_fumble_recovery"]] <- dt[
-  #   fumble == 1L & fumble_lost == 1L & play_type != "punt",
-  #   by = .(week, season_type, team_abbr = defteam),
-  #   list(stat_label="def_fumble_recovery", football_values = .N, fantasy_points = .N*2L)
-  # ]
-  
-  # # defensive bonus for fumble recovery for a punt
-  # # punts start with the receiving team listed as defteam, so those may need special consideration
-  # def[["def_fumble_recovery_punt"]] <- dt[
-  #   fumble == 1L & fumble_lost == 1L & play_type == "punt",
-  #   by = .(week, season_type, team_abbr = posteam),
-  #   list(stat_label="def_fumble_recovery_punt", football_values = .N, fantasy_points = .N*2L)
-  # ]
-  
-  # # defensive bonus for interceptions
-  # def[["def_interception"]] <- dt[
-  #   interception == 1L,
-  #   by = .(week, season_type, team_abbr = defteam),
-  #   list(stat_label="def_interception", football_values = .N, fantasy_points = .N*2L)
-  # ]
-  
-  # # def bonus for blocks on punt, fg or extra point
-  # def[["def_block"]] <- dt[
-  #   !is.na(blocked_player_name),
-  #   by = .(week, season_type, team_abbr = defteam),
-  #   list(stat_label="def_block", football_values = .N, fantasy_points = .N*2L)
-  # ]
-  
-  # # def bonus for def td for any reason or cause (block, fumble, interception, etc)
-  # # only for normal possession plays by the opposite team (ie. pass or rush)
-  # def[["def_td"]] <- dt[
-  #   return_touchdown == 1L & play_type %in% c("pass", "run"),
-  #   by = .(week, season_type, team_abbr = defteam),
-  #   list(stat_label="def_td", football_values = .N, fantasy_points = .N*6L)
-  # ]
-  
-  # # special teams bonus for a return td
-  # # in a kickoff, the kicking team is listed as the defteam
-  # def[["def_kickoff_return_td"]] <- dt[
-  #   return_touchdown == 1L & play_type %in% c("kickoff"),
-  #   by = .(week, season_type, team_abbr = posteam),
-  #   list(stat_label="def_kickoff_return_td", football_values = .N, fantasy_points = .N*6L)
-  # ]
-  
-  # # special teams bonus for a return td
-  # # in a punt, the receiving team is listed as the defteam
-  # def[["def_punt_return_td"]] <- dt[
-  #   return_touchdown == 1L & play_type %in% c("punt"),
-  #   by = .(week, season_type, team_abbr = posteam),
-  #   list(stat_label="def_punt_return_td", football_values = .N, fantasy_points = .N*6L)
-  # ]
   
   # # calculate points allowed for each team
   # forty_yd_plus_passing_td_qb_bonus <- rbindlist(list(
@@ -470,5 +529,3 @@ def defense_bonus(file : str,
   
   # return
 
-
-# %%
