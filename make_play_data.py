@@ -16,7 +16,7 @@ def rosters(roster_file,
   roster = roster.merge(teams.drop(['team_name','team_logo_espn','position', 'lookup_string'], axis=1), how='left', on='team_abbr')
   logging.info('Roster length after merge: ' + str(len(roster)))
   logging.info('Full list of positions: ' + ', '.join(roster['position'].unique()))
-  roster = roster[roster['position'].isin(['QB', 'P', 'K', 'TE', 'RB', 'WR'])]
+  roster = roster[roster['position'].isin(['QB', 'P', 'K', 'TE', 'RB', 'WR'])] # it doesn't look like there is a FB position for 2024
   logging.info('Roster length after filtering for offensive team positions: ' + str(len(roster)))
   roster['position'] = np.where(roster['position']=="P","K",roster['position'])
   logging.info('Remaining list of positions: ' + ', '.join(roster['position'].unique()))
@@ -270,6 +270,7 @@ pbp = play_by_plays('play_by_play_2024, 2024-10-28 052227 EDT.parquet', ['Regula
 # %% 
 def offense_bonus(file : str, 
         season_type,
+        roster : pd.DataFrame,
         path : str = './Data/') -> pd.DataFrame:
 
   # create the play-by-play data that will be used to determine the bonuses      
@@ -327,50 +328,31 @@ def offense_bonus(file : str,
            forty_yd_plus_rushing_td_bonus, 
            forty_yd_plus_kickoff_return_td_bonus, 
            forty_yd_plus_punt_return_td_bonus])
-  
-  return o_bonuses
-  
-  # bonus <- rbindlist(bonus)
-  
-  # bonus <- merge.data.table(bonus, dt_rosters_[,.(player_id, player_name, team_abbr, position)], all.x = TRUE, by = c("player_id", "team_abbr"))
-  
-  # if(any(is.na(bonus$position))){
-  #   print(paste0("There were ", length(bonus$position[is.na(bonus$position)]), " rows removed because of NAs in position"))
-  #   bonus <- bonus[!is.na(position)]
-  # }
 
-  # # rename Fullback to Running Back
-  # bonus <- rbindlist(list(
-  #   bonus[position=="FB"][,position:="RB"],
-  #   bonus[position!="FB"]
-  # ))
+  o_bonuses = pd.merge(
+    o_bonuses[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_value']],
+    roster[['player_id','team_abbr','team_division','team_conf','lookup_string','position','player_name']],
+    how="left",
+    on=['player_id','team_abbr'],
+  )
+
+  if o_bonuses['lookup_string'].notnull().all(): 
+    logging.warning("There are stat rows that did not join with a row in the roster data frame.")
+
+  o_bonuses = o_bonuses[['week','season_type','team_abbr','team_conf','team_division','position','player_id','player_name','lookup_string','stat_label','football_value','fantasy_value']]
+
+  o_bonuses.loc[o_bonuses['position']=='FB','position'] = 'RB' # I don't think reassignment will be needed since FB isn't in the 2024 roster data currently, but it was needed in 2023
+
+  o_bonuses_included = o_bonuses.loc[o_bonuses['position'].isin(['QB','RB','WR','TE'])]
+  o_bonuses_excluded = o_bonuses.loc[np.logical_not(o_bonuses['position'].isin(['QB','RB','WR','TE']))]
+
+  if len(o_bonuses_excluded) > 0:
+    logging.warning("There are o_bonuses excluded because the position is out of scope:")
+    logging.warning(o_bonuses_excluded)
+
+  o_bonuses_included = o_bonuses_included.sort_values(by=['week','position'])
   
-  # if(any(!(bonus$position %in% c('QB', 'RB', 'WR', 'TE')))){
-  #   print(paste0("There were ", dim(bonus[!(position %in% c('QB', 'RB', 'FB', 'WR', 'TE'))])[1], 
-  #                " rows removed because of position is out of scope"))
-  #   bonus <- bonus[position %in% c('QB', 'RB', 'WR', 'TE')]
-  # }
-  
-  # bonus <- merge.data.table(bonus, dt_team_info_[,.(team_abbr, team_conf, team_division)], all.x = TRUE, by = c("team_abbr"))
-  
-  # bonus <-
-  #   bonus[, .(
-  #     team_abbr,
-  #     team_conf,
-  #     team_division,
-  #     position,
-  #     week,
-  #     season_type, 
-  #     player_id,
-  #     player_name,
-  #     stat_label,
-  #     football_values,
-  #     fantasy_points
-  #   )]
-  
-  # setorder(bonus, cols = week, position)
-  
-  # return(bonus)
+  return o_bonuses_included
 
 # %%
 def defense_bonus(file : str, 

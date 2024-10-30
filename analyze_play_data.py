@@ -46,5 +46,5 @@ d = make_play_data.defense_stats(file=d_file, season_type=season_type) # this fu
 # %%
 pbp_file = 'play_by_play_2024, 2024-10-28 052227 EDT.parquet'
 pbp = make_play_data.play_by_plays(file = pbp_file, season_type = season_type)
-o_bonus = make_play_data.offense_bonus(file = pbp_file, season_type = season_type)
+o_bonus = make_play_data.offense_bonus(file = pbp_file, season_type = season_type, roster = roster)
 d_bonus = make_play_data.defense_bonus(file = pbp_file, season_type = season_type) # this function is partially complete
