@@ -28,23 +28,38 @@ season_teams = teams['team_abbr'].to_list()
 
 # %%
 roster_file = 'roster_2024, 2024-10-28 031411 EDT.parquet'
-roster = make_play_data.rosters(roster_file, teams = teams)
-
+roster = make_play_data.rosters(file = roster_file, teams = teams)
 
 # %%
 k_file = 'player_stats_kicking_2024, 2024-10-28 052851 EDT.parquet'
-k = make_play_data.kicker_stats(file=k_file, season_type=season_type)
+k = make_play_data.kicker_stats(file = k_file, season_type = season_type, roster = roster)
 
 # %% 
 o_file = 'player_stats_2024, 2024-10-28 052851 EDT.parquet'
-o = make_play_data.offense_stats(file=o_file, season_type=season_type)
+o = make_play_data.offense_stats(file = o_file, season_type = season_type, roster = roster)
 
 # %%
-d_file ='player_stats_def_2024, 2024-10-28 052851 EDT.parquet'
-d = make_play_data.defense_stats(file=d_file, season_type=season_type) # this function is not complete
+d_file ='play_by_play_2024, 2024-10-28 052227 EDT.parquet'
+d = make_play_data.defense_stats(file = d_file, season_type = season_type, teams = teams) # this function is not complete
 
 # %%
 pbp_file = 'play_by_play_2024, 2024-10-28 052227 EDT.parquet'
 pbp = make_play_data.play_by_plays(file = pbp_file, season_type = season_type)
 o_bonus = make_play_data.offense_bonus(file = pbp_file, season_type = season_type, roster = roster)
-d_bonus = make_play_data.defense_bonus(file = pbp_file, season_type = season_type) # this function is partially complete
+d_bonus = make_play_data.defense_bonus(file = pbp_file, season_type = season_type, teams = teams) # this function is partially complete
+
+df_stats = pd.concat([
+  o,
+  o_bonus,
+  k,
+  d,
+  d_bonus
+])
+
+del [[
+  o,
+  o_bonus,
+  k,
+  d,
+  d_bonus
+]]

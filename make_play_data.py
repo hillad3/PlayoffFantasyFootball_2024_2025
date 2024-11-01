@@ -6,14 +6,14 @@ from functools import reduce
 import logging
 
 # %%
-def rosters(roster_file,
+def rosters(file,
         teams : pd.DataFrame, 
         path : str = './Data/') -> pd.DataFrame:
-  roster = pd.read_parquet(path + roster_file, engine='pyarrow')
+  roster = pd.read_parquet(path + file, engine='pyarrow')
   logging.info('Initial roster length: ' + str(len(roster)))
   roster.rename(columns={'full_name':'player_name', 'gsis_id':'player_id','team':'team_abbr'}, inplace=True)
   roster = roster[['season','team_abbr','position','status','player_name', 'player_id']]
-  roster = roster.merge(teams.drop(['team_name','team_logo_espn','position', 'lookup_string'], axis=1), how='left', on='team_abbr')
+  roster = roster.merge(teams.drop(['team_logo_espn','position', 'lookup_string'], axis=1), how='left', on='team_abbr')
   logging.info('Roster length after merge: ' + str(len(roster)))
   logging.info('Full list of positions: ' + ', '.join(roster['position'].unique()))
   roster = roster[roster['position'].isin(['QB', 'P', 'K', 'TE', 'RB', 'WR'])] # it doesn't look like there is a FB position for 2024
@@ -42,6 +42,7 @@ def teams(season : int,
 # %%
 def offense_stats(file : str,
         season_type, 
+        roster : pd.DataFrame, 
         data_path = './Data/') -> pd.DataFrame:
   df = pd.read_parquet(data_path + file, engine='pyarrow')
   df.loc[df['season_type']=='REG','season_type'] = 'Regular'
@@ -100,10 +101,39 @@ def offense_stats(file : str,
 
   df.loc[df['fantasy_points'].isna(),'fantasy_points'] = 0 # fill in any NaNs if a rule did not apply
 
+  df = pd.merge(
+    df[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_points']],
+    roster[['player_id','team_abbr','team_division','team_conf','lookup_string','position','player_name']],
+    how="left",
+    on=['player_id','team_abbr'],
+  )
+
+  if df['lookup_string'].notnull().all(): 
+    logging.warning("There are stat rows that did not join with a row in the roster data frame.")
+
+  df = df[[
+    'week', 
+    'season_type', 
+    'team_abbr', 
+    'team_conf', 
+    'team_division', 
+    'position',
+    'player_id', 
+    'player_name', 
+    'lookup_string', 
+    'stat_label',
+    'football_value', 
+    'fantasy_points'
+  ]]
+
+
   return df
 
 # %%
-def kicker_stats(file : str, season_type, data_path = './Data/') -> pd.DataFrame:
+def kicker_stats(file : str, 
+        season_type, 
+        roster : pd.DataFrame, 
+        data_path = './Data/') -> pd.DataFrame:
   df = pd.read_parquet(data_path + file, engine='pyarrow')
   df.loc[df['season_type']=='REG','season_type'] = 'Regular'
   df.loc[df['season_type']=='POST','season_type'] = 'Post'
@@ -151,39 +181,30 @@ def kicker_stats(file : str, season_type, data_path = './Data/') -> pd.DataFrame
   
   df.loc[df['fantasy_points'].isna(),'fantasy_points'] = 0 # fill in any NaNs if a rule did not apply
 
-  return df
-
-# %%
-def defense_stats(file : str,
-        season_type, 
-        data_path = './Data/') -> pd.DataFrame:
-  df = pd.read_parquet(data_path + file, engine='pyarrow')
-  df.loc[df['season_type']=='REG','season_type'] = 'Regular'
-  df.loc[df['season_type']=='POST','season_type'] = 'Post'
-  df = df[df['season_type'].isin(season_type)]
-  df.rename(columns = {'team' : 'team_abbr'}, inplace=True)
-
-  std_cols = [
-    'week',
-    'season_type',
-    'player_id',
-    'player_name',
-    'team_abbr'   
-  ]
-
-  stat_cols = [
-    'def_sacks',
-    'def_interceptions',
-    'def_fumbles',
-    'def_safety'
-  ]
-
-  df = df.melt(
-    id_vars = std_cols,
-    value_vars = stat_cols,
-    var_name = 'stat_label',
-    value_name = 'football_value'
+  df = pd.merge(
+    df[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_points']],
+    roster[['player_id','team_abbr','team_division','team_conf','lookup_string','position','player_name']],
+    how="left",
+    on=['player_id','team_abbr'],
   )
+
+  if df['lookup_string'].notnull().all(): 
+    logging.warning("There are stat rows that did not join with a row in the roster data frame.")
+
+  df = df[[
+    'week', 
+    'season_type', 
+    'team_abbr', 
+    'team_conf', 
+    'team_division', 
+    'position',
+    'player_id', 
+    'player_name', 
+    'lookup_string', 
+    'stat_label',
+    'football_value', 
+    'fantasy_points'
+  ]]
 
   return df
 
@@ -283,7 +304,7 @@ def offense_bonus(file : str,
   forty_yd_plus_passing_td_qb_bonus['stat_label'] = "forty_yd_plus_passing_td_qb_bonus"
   forty_yd_plus_passing_td_qb_bonus = forty_yd_plus_passing_td_qb_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_passing_td_qb_bonus.rename(columns={'size':'football_value'},inplace=True)
-  forty_yd_plus_passing_td_qb_bonus['fantasy_value'] = forty_yd_plus_passing_td_qb_bonus['football_value']*2
+  forty_yd_plus_passing_td_qb_bonus['fantasy_points'] = forty_yd_plus_passing_td_qb_bonus['football_value']*2
 
   # offensive bonus for touchdown with pass over 40 yards for receiver
   forty_yd_plus_passing_td_receiver_bonus = pbp[(pbp['pass_touchdown']==1) & (pbp['passing_yards']>=40)].copy()
@@ -292,7 +313,7 @@ def offense_bonus(file : str,
   forty_yd_plus_passing_td_receiver_bonus['stat_label'] = "forty_yd_plus_passing_td_receiver_bonus"
   forty_yd_plus_passing_td_receiver_bonus = forty_yd_plus_passing_td_receiver_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_passing_td_receiver_bonus.rename(columns={'size':'football_value'},inplace=True)
-  forty_yd_plus_passing_td_receiver_bonus['fantasy_value'] = forty_yd_plus_passing_td_receiver_bonus['football_value']*2
+  forty_yd_plus_passing_td_receiver_bonus['fantasy_points'] = forty_yd_plus_passing_td_receiver_bonus['football_value']*2
 
   # offensive bonus for touchdown with rush over 40 yards for rusher
   forty_yd_plus_rushing_td_bonus = pbp[(pbp['rush_touchdown']==1) & (pbp['rushing_yards']>=40)].copy()
@@ -301,7 +322,7 @@ def offense_bonus(file : str,
   forty_yd_plus_rushing_td_bonus['stat_label'] = "forty_yd_plus_rushing_td_bonus"
   forty_yd_plus_rushing_td_bonus = forty_yd_plus_rushing_td_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_rushing_td_bonus.rename(columns={'size':'football_value'},inplace=True)
-  forty_yd_plus_rushing_td_bonus['fantasy_value'] = forty_yd_plus_rushing_td_bonus['football_value']*2
+  forty_yd_plus_rushing_td_bonus['fantasy_points'] = forty_yd_plus_rushing_td_bonus['football_value']*2
 
   # offensive bonus for touchdown return over 40 yards for receiving team
   # only for normal possession plays by the opposite team (i.e. pass or rush) 
@@ -313,7 +334,7 @@ def offense_bonus(file : str,
   forty_yd_plus_kickoff_return_td_bonus['stat_label'] = "forty_yd_plus_kickoff_return_td_bonus"
   forty_yd_plus_kickoff_return_td_bonus = forty_yd_plus_kickoff_return_td_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_kickoff_return_td_bonus.rename(columns={'size':'football_value'},inplace=True)
-  forty_yd_plus_kickoff_return_td_bonus['fantasy_value'] = forty_yd_plus_kickoff_return_td_bonus['football_value']*2
+  forty_yd_plus_kickoff_return_td_bonus['fantasy_points'] = forty_yd_plus_kickoff_return_td_bonus['football_value']*2
 
   forty_yd_plus_punt_return_td_bonus = pbp[(pbp['play_type']=="punt") & (pbp['return_touchdown']==1) & (pbp['return_yards']>=40)].copy()
   forty_yd_plus_punt_return_td_bonus = forty_yd_plus_punt_return_td_bonus[['week','season_type','defteam','punt_returner_player_id','punt_returner_player_name','return_touchdown','return_yards']]
@@ -321,42 +342,56 @@ def offense_bonus(file : str,
   forty_yd_plus_punt_return_td_bonus['stat_label'] = "forty_yd_plus_punt_return_td_bonus"
   forty_yd_plus_punt_return_td_bonus = forty_yd_plus_punt_return_td_bonus.groupby(['week', 'season_type', 'team_abbr', 'player_name', 'player_id','stat_label'], as_index=False).size()
   forty_yd_plus_punt_return_td_bonus.rename(columns={'size':'football_value'},inplace=True)
-  forty_yd_plus_punt_return_td_bonus['fantasy_value'] = forty_yd_plus_punt_return_td_bonus['football_value']*2
+  forty_yd_plus_punt_return_td_bonus['fantasy_points'] = forty_yd_plus_punt_return_td_bonus['football_value']*2
 
-  o_bonuses = pd.concat([forty_yd_plus_passing_td_qb_bonus, 
+  df = pd.concat([forty_yd_plus_passing_td_qb_bonus, 
            forty_yd_plus_passing_td_receiver_bonus, 
            forty_yd_plus_rushing_td_bonus, 
            forty_yd_plus_kickoff_return_td_bonus, 
            forty_yd_plus_punt_return_td_bonus])
 
-  o_bonuses = pd.merge(
-    o_bonuses[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_value']],
+  df = pd.merge(
+    df[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_points']],
     roster[['player_id','team_abbr','team_division','team_conf','lookup_string','position','player_name']],
     how="left",
     on=['player_id','team_abbr'],
   )
 
-  if o_bonuses['lookup_string'].notnull().all(): 
+  if df['lookup_string'].notnull().all(): 
     logging.warning("There are stat rows that did not join with a row in the roster data frame.")
 
-  o_bonuses = o_bonuses[['week','season_type','team_abbr','team_conf','team_division','position','player_id','player_name','lookup_string','stat_label','football_value','fantasy_value']]
+  df = df[[
+    'week', 
+    'season_type', 
+    'team_abbr', 
+    'team_conf', 
+    'team_division', 
+    'position',
+    'player_id', 
+    'player_name', 
+    'lookup_string', 
+    'stat_label',
+    'football_value', 
+    'fantasy_points'
+  ]]
 
-  o_bonuses.loc[o_bonuses['position']=='FB','position'] = 'RB' # I don't think reassignment will be needed since FB isn't in the 2024 roster data currently, but it was needed in 2023
+  df.loc[df['position']=='FB','position'] = 'RB' # I don't think reassignment will be needed since FB isn't in the 2024 roster data currently, but it was needed in 2023
 
-  o_bonuses_included = o_bonuses.loc[o_bonuses['position'].isin(['QB','RB','WR','TE'])]
-  o_bonuses_excluded = o_bonuses.loc[np.logical_not(o_bonuses['position'].isin(['QB','RB','WR','TE']))]
+  df_in = df.loc[df['position'].isin(['QB','RB','WR','TE'])]
+  df_ex = df.loc[np.logical_not(df['position'].isin(['QB','RB','WR','TE']))]
 
-  if len(o_bonuses_excluded) > 0:
-    logging.warning("There are o_bonuses excluded because the position is out of scope:")
-    logging.warning(o_bonuses_excluded)
+  if len(df_ex) > 0:
+    logging.warning("There are df excluded because the position is out of scope:")
+    logging.warning(df_ex)
 
-  o_bonuses_included = o_bonuses_included.sort_values(by=['week','position'])
+  df_in = df_in.sort_values(by=['week','position'])
   
-  return o_bonuses_included
+  return df_in
 
 # %%
 def defense_bonus(file : str, 
         season_type,
+        teams : pd.DataFrame,
         path : str = './Data/') -> pd.DataFrame:
 
   pbp = play_by_plays(file, season_type, path)
@@ -374,7 +409,7 @@ def defense_bonus(file : str,
   sack_bonus['stat_label'] = "sack_bonus"
   sack_bonus = sack_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   sack_bonus.rename(columns={'size':'football_value'},inplace=True)
-  sack_bonus['fantasy_value'] = sack_bonus['football_value']
+  sack_bonus['fantasy_points'] = sack_bonus['football_value']
 
   # defensive bonus for safeties
   safety_bonus = pbp[(pbp['safety']==1) & (pbp['safety_player_id'].notnull())].copy()
@@ -383,7 +418,7 @@ def defense_bonus(file : str,
   safety_bonus['stat_label'] = "safety_bonus"
   safety_bonus = safety_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   safety_bonus.rename(columns={'size':'football_value'},inplace=True)
-  safety_bonus['fantasy_value'] = safety_bonus['football_value']
+  safety_bonus['fantasy_points'] = safety_bonus['football_value']
 
   # defensive bonus for fumble recovery
   fumble_recovery_bonus = pbp[(pbp['fumble']==1) & (pbp['fumble_lost']==1) & (pbp['play_type']!="punt")].copy()
@@ -392,7 +427,7 @@ def defense_bonus(file : str,
   fumble_recovery_bonus['stat_label'] = "fumble_recovery_bonus"
   fumble_recovery_bonus = fumble_recovery_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   fumble_recovery_bonus.rename(columns={'size':'football_value'},inplace=True)
-  fumble_recovery_bonus['fantasy_value'] = fumble_recovery_bonus['football_value']*2
+  fumble_recovery_bonus['fantasy_points'] = fumble_recovery_bonus['football_value']*2
 
   # defensive bonus for fumble recovery during a punt; use posteam as team_abbr
   fumble_recovery_punt_bonus = pbp[(pbp['fumble']==1) & (pbp['fumble_lost']==1) & (pbp['play_type']=="punt")].copy()
@@ -401,7 +436,7 @@ def defense_bonus(file : str,
   fumble_recovery_punt_bonus['stat_label'] = "fumble_recovery_punt_bonus"
   fumble_recovery_punt_bonus = fumble_recovery_punt_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   fumble_recovery_punt_bonus.rename(columns={'size':'football_value'},inplace=True)
-  fumble_recovery_punt_bonus['fantasy_value'] = fumble_recovery_punt_bonus['football_value']*2
+  fumble_recovery_punt_bonus['fantasy_points'] = fumble_recovery_punt_bonus['football_value']*2
 
   # defensive bonus for interception
   interception_bonus = pbp[(pbp['interception']==1)].copy()
@@ -410,7 +445,7 @@ def defense_bonus(file : str,
   interception_bonus['stat_label'] = "interception_bonus"
   interception_bonus = interception_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   interception_bonus.rename(columns={'size':'football_value'},inplace=True)
-  interception_bonus['fantasy_value'] = interception_bonus['football_value']*2
+  interception_bonus['fantasy_points'] = interception_bonus['football_value']*2
 
   # defensive bonus for block
   block_bonus = pbp[(pbp['blocked_player_name'].notnull())].copy()
@@ -419,7 +454,7 @@ def defense_bonus(file : str,
   block_bonus['stat_label'] = "block_bonus"
   block_bonus = block_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   block_bonus.rename(columns={'size':'football_value'},inplace=True)
-  block_bonus['fantasy_value'] = block_bonus['football_value']*2
+  block_bonus['fantasy_points'] = block_bonus['football_value']*2
   
   # defensive bonus for defensive td return
   def_td_return_bonus = pbp[(pbp['return_touchdown']==1) & (pbp['play_type'].isin(['pass','run']))].copy()
@@ -428,16 +463,16 @@ def defense_bonus(file : str,
   def_td_return_bonus['stat_label'] = "def_td_return_bonus"
   def_td_return_bonus = def_td_return_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   def_td_return_bonus.rename(columns={'size':'football_value'},inplace=True)
-  def_td_return_bonus['fantasy_value'] = def_td_return_bonus['football_value']*6
+  def_td_return_bonus['fantasy_points'] = def_td_return_bonus['football_value']*6
 
   # defensive bonus for special teams td return
   punt_def_td_return_bonus = pbp[(pbp['return_touchdown']==1) & (pbp['play_type'].isin(['punt']))].copy()
-  punt_def_td_return_bonus = punt_def_td_return_bonus[['week','season_type','defteam',]]
+  punt_def_td_return_bonus = punt_def_td_return_bonus[['week','season_type','defteam']]
   punt_def_td_return_bonus.rename(columns={'defteam':'team_abbr'}, inplace=True)
   punt_def_td_return_bonus['stat_label'] = "punt_def_td_return_bonus"
   punt_def_td_return_bonus = punt_def_td_return_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   punt_def_td_return_bonus.rename(columns={'size':'football_value'},inplace=True)
-  punt_def_td_return_bonus['fantasy_value'] = punt_def_td_return_bonus['football_value']*6
+  punt_def_td_return_bonus['fantasy_points'] = punt_def_td_return_bonus['football_value']*6
 
   # defensive bonus for special teams td return; use posteam for kickoff
   kickoff_def_td_return_bonus = pbp[(pbp['return_touchdown']==1) & (pbp['play_type'].isin(['kickoff']))].copy()
@@ -446,10 +481,10 @@ def defense_bonus(file : str,
   kickoff_def_td_return_bonus['stat_label'] = "kickoff_def_td_return_bonus"
   kickoff_def_td_return_bonus = kickoff_def_td_return_bonus.groupby(['week', 'season_type', 'team_abbr','stat_label'], as_index=False).size()
   kickoff_def_td_return_bonus.rename(columns={'size':'football_value'},inplace=True)
-  kickoff_def_td_return_bonus['fantasy_value'] = kickoff_def_td_return_bonus['football_value']*6
+  kickoff_def_td_return_bonus['fantasy_points'] = kickoff_def_td_return_bonus['football_value']*6
 
-
-  d_bonuses = pd.concat([sack_bonus,
+  # Combine defensive bonuses into one df
+  df = pd.concat([sack_bonus,
     safety_bonus,
     fumble_recovery_bonus,
     fumble_recovery_punt_bonus,
@@ -458,56 +493,112 @@ def defense_bonus(file : str,
     def_td_return_bonus,
     punt_def_td_return_bonus,
     kickoff_def_td_return_bonus])
-  
-  return d_bonuses
-  
-  
-  # # calculate points allowed for each team
-  # forty_yd_plus_passing_td_qb_bonus <- rbindlist(list(
-  #   unique(dt[,.(week, season_type, team_abbr = home_team, football_values = away_score)]),
-  #   unique(dt[,.(week, season_type, team_abbr = away_team, football_values = home_score)])
-  # ))
-  # forty_yd_plus_passing_td_qb_bonus[, stat_label := "def_points_allowed"]
-  # forty_yd_plus_passing_td_qb_bonus <- forty_yd_plus_passing_td_qb_bonus[,.(week, season_type, team_abbr, stat_label, football_values)]
-  # def[["def_points_allowed"]] <- forty_yd_plus_passing_td_qb_bonus[, 
-  #   fantasy_points := case_when(
-  #     football_values == 0L ~ 10L,
-  #     football_values >= 1L & football_values <= 6 ~ 7L,
-  #     football_values >= 7L & football_values <= 13 ~ 4L,
-  #     football_values >= 14L & football_values <= 17 ~ 1L,
-  #     football_values >= 18L & football_values <= 21 ~ 0L,
-  #     football_values >= 22L & football_values <= 27 ~ -1L,
-  #     football_values >= 28L & football_values <= 34 ~ -4L,
-  #     football_values >= 35L & football_values <= 45 ~ -7L,
-  #     football_values >= 46L ~ -10L,
-  #     .default = 0L
-  #   )
-  # ]
-  
-  # def <- rbindlist(def)
-  # def[, position:="Defense"]
-  # def[, player_id:="N/A"]
-  
-  # def[,.('position','week','player_id','team_abbr')]
-  
-  # def <- merge.data.table(def, dt_team_info_[,.(team_abbr, player_name = team_name, team_conf, team_division)], all.x = TRUE)
-  
-  # def <-
-  #   def[, .(
-  #     team_abbr,
-  #     team_conf,
-  #     team_division,
-  #     position,
-  #     week,
-  #     season_type, 
-  #     player_id,
-  #     player_name,
-  #     stat_label,
-  #     football_values,
-  #     fantasy_points
-  #   )]
-  
-  # setorder(def, cols = week, position)
-  
-  # return
 
+  df['position'] = "Defense"
+  df['player_id'] = "N/A"
+
+  teams = teams[['team_abbr', 'team_name', 'team_conf', 'team_division', 'lookup_string']].drop_duplicates()
+
+  # # erge in additional team data
+  df = pd.merge(
+    df,
+    teams,
+    how = 'left',
+    on = 'team_abbr'
+  )
+
+  df = df.rename(columns = {'team_name':'player_name'})
+  
+  df = df[[
+    'week', 
+    'season_type', 
+    'team_abbr', 
+    'team_conf', 
+    'team_division', 
+    'position',
+    'player_id', 
+    'player_name', 
+    'lookup_string', 
+    'stat_label',
+    'football_value', 
+    'fantasy_points'
+  ]]
+  
+  return df
+
+# %%
+def defense_stats(file : str,
+        season_type, 
+        teams : pd.DataFrame,
+        data_path = './Data/') -> pd.DataFrame:
+  df = pd.read_parquet(data_path + file, engine='pyarrow')
+  df.loc[df['season_type']=='REG','season_type'] = 'Regular'
+  df.loc[df['season_type']=='POST','season_type'] = 'Post'
+  df = df[df['season_type'].isin(season_type)]
+  df.rename(columns = {'team' : 'team_abbr'}, inplace=True)  
+
+  # construct two unique dataframes with points against
+  df = pd.concat([
+
+    # home team defense points against
+    df[
+      ['week','season_type','home_team','away_score']
+    ].rename(
+      columns={'home_team':'team_abbr','away_score':'football_value'}
+    ).drop_duplicates(),
+
+    # away team defense points against
+    df[
+      ['week','season_type','away_team','home_score']
+    ].rename(
+      columns={'away_team':'team_abbr','home_score':'football_value'}
+    ).drop_duplicates()
+
+  ])
+
+  df['position'] = "Defense"
+  df['player_id'] = "N/A"
+  df['stat_label'] = 'def_points_allowed'
+
+  df['fantasy_points'] = None # default condition
+  df.loc[df['football_value']==0,'fantasy_points'] = 10
+  df.loc[(df['football_value']>=1) & (df['football_value']<= 6),'fantasy_points'] = 7
+  df.loc[(df['football_value']>=7) & (df['football_value']<= 13),'fantasy_points'] = 4
+  df.loc[(df['football_value']>=14) & (df['football_value']<= 17),'fantasy_points'] = 1
+  df.loc[(df['football_value']>=18) & (df['football_value']<= 21),'fantasy_points'] = 0
+  df.loc[(df['football_value']>=22) & (df['football_value']<= 27),'fantasy_points'] = -1
+  df.loc[(df['football_value']>=28) & (df['football_value']<= 34),'fantasy_points'] = -4
+  df.loc[(df['football_value']>=35) & (df['football_value']<= 45),'fantasy_points'] = -7
+  df.loc[(df['football_value']>=46),'fantasy_points'] = -10
+
+  if df['fantasy_points'].isnull().any():
+    logging.warning("There are rows in the defensive data that did not get assigned fantasy points based the given cases")
+
+  teams = teams[['team_abbr', 'team_name', 'team_conf', 'team_division', 'lookup_string']].drop_duplicates()
+
+  # # erge in additional team data
+  df = pd.merge(
+    df,
+    teams,
+    how = 'left',
+    on = 'team_abbr'
+  )
+
+  df = df.rename(columns = {'team_name':'player_name'})
+  
+  df = df[[
+    'week', 
+    'season_type', 
+    'team_abbr', 
+    'team_conf', 
+    'team_division', 
+    'position',
+    'player_id', 
+    'player_name', 
+    'lookup_string', 
+    'stat_label',
+    'football_value', 
+    'fantasy_points'
+  ]]
+
+  return df
