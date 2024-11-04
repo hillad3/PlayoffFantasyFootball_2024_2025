@@ -9,33 +9,34 @@ import logging
 def rosters(file,
         teams : pd.DataFrame, 
         path : str = './Data/') -> pd.DataFrame:
-  roster = pd.read_parquet(path + file, engine='pyarrow')
-  logging.info('Initial roster length: ' + str(len(roster)))
-  roster.rename(columns={'full_name':'player_name', 'gsis_id':'player_id','team':'team_abbr'}, inplace=True)
-  roster = roster[['season','team_abbr','position','status','player_name', 'player_id']]
-  roster = roster.merge(teams.drop(['team_logo_espn','position', 'lookup_string'], axis=1), how='left', on='team_abbr')
-  logging.info('Roster length after merge: ' + str(len(roster)))
-  logging.info('Full list of positions: ' + ', '.join(roster['position'].unique()))
-  roster = roster[roster['position'].isin(['QB', 'P', 'K', 'TE', 'RB', 'WR'])] # it doesn't look like there is a FB position for 2024
-  logging.info('Roster length after filtering for offensive team positions: ' + str(len(roster)))
-  roster['position'] = np.where(roster['position']=="P","K",roster['position'])
-  logging.info('Remaining list of positions: ' + ', '.join(roster['position'].unique()))
-  roster['lookup_string'] = roster['position'] + ", " + roster['team_abbr'] + ": " + roster['player_name'] + " (" + roster['team_division'] + ")"
-  return roster
+  df = (
+    pd.read_parquet(path + file, engine='pyarrow')
+    .rename(columns={'full_name':'player_name', 'gsis_id':'player_id','team':'team_abbr'})
+    .loc[:,['season','team_abbr','position','status','player_name', 'player_id']] # select columns
+    .loc[lambda x: x['position'].isin(['QB', 'P', 'K', 'TE', 'RB', 'FB', 'WR']),:] # subset data for offensive positions; it doesn't look like there is a FB position for 2024
+    .assign(position = lambda x: np.where(x.position=="P","K",x.position)) # rename Punters as kickers
+    .merge(teams.drop(['team_logo_espn','position', 'lookup_string','season'], axis=1).drop_duplicates(), how='left', on='team_abbr')
+    .sort_values(by = ['position','player_id'])
+    .assign(lookup_string = lambda x: x.position + ", " + x.team_abbr + ": " + x.player_name + " (" + x.team_division + ")")
+  )
+  logging.info('Roster length after merge and filtering for offense positions: ' + str(len(df)))
+  logging.info('List of positions in df: ' + ', '.join(df['position'].unique()))
+  return df
 
-def teams(season : int, 
+def teams(season_year : int, 
         teams_file : str = 'nflreadr_teams.csv', 
         path : str = './Data/') -> pd.DataFrame:
-  teams_file = 'nflreadr_teams.csv'
-  teams = pd.read_csv(path + teams_file, engine='pyarrow')
-  teams = teams[teams['season'] == season]
-  teams['team_name_w_abbr'] = teams['full'] + " (" + teams['team'] + ")"
-  teams = teams[['team','full','team_name_w_abbr']]
-  teams.rename(columns={'team':'team_abbr', 'full':'team_name'}, inplace=True)
-  teams = teams.merge(nfl.import_team_desc()[['team_abbr','team_conf','team_division','team_logo_espn']], how='left', on='team_abbr') # add in conf & division
-  teams['position'] = "Defense" # when selecting a team in the fantasy rules, it is always as a defense
-  teams['lookup_string'] = teams['position'] + ", " + teams['team_abbr'] + " (" + teams['team_division'] + ")"
-  teams = teams[['team_name', 'team_abbr', 'team_name_w_abbr', 'team_conf', 'team_division', 'position', 'lookup_string', 'team_logo_espn']]
+  teams = (
+    pd.read_csv(path + teams_file, engine='pyarrow')
+    .loc[lambda x: x.season == season_year,:]
+    .assign(team_name_w_abbr = lambda x: x.full + " (" + x.team + ")")
+    .loc[:,['season','team','full','team_name_w_abbr']]
+    .rename(columns={'team':'team_abbr', 'full':'team_name'})
+    .merge(nfl.import_team_desc()[['team_abbr','team_conf','team_division','team_logo_espn']].drop_duplicates(), how='left', on='team_abbr')
+    .assign(position = "Defense") # when selecting a team in the fantasy rules, it is always as a defense
+    .assign(lookup_string = lambda x: x.position + ", " + x.team_abbr + " (" + x.team_division + ")")
+    .loc[:,['season','team_name', 'team_abbr', 'team_name_w_abbr', 'team_conf', 'team_division', 'position', 'lookup_string', 'team_logo_espn']]
+  )
   return teams
 
 
@@ -43,6 +44,7 @@ def teams(season : int,
 def offense_stats(file : str,
         season_type, 
         roster : pd.DataFrame, 
+        teams : pd.DataFrame,
         data_path = './Data/') -> pd.DataFrame:
   df = pd.read_parquet(data_path + file, engine='pyarrow')
   df.loc[df['season_type']=='REG','season_type'] = 'Regular'
@@ -101,14 +103,34 @@ def offense_stats(file : str,
 
   df.loc[df['fantasy_points'].isna(),'fantasy_points'] = 0 # fill in any NaNs if a rule did not apply
 
+  # add in team information
   df = pd.merge(
     df[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_points']],
-    roster[['player_id','team_abbr','team_division','team_conf','lookup_string','position','player_name']],
+    teams[['team_abbr','team_division','team_conf']],
     how="left",
-    on=['player_id','team_abbr'],
+    on='team_abbr',
   )
 
-  if df['lookup_string'].notnull().all(): 
+  # add in player information
+  df = pd.merge(
+    df[['player_id','team_abbr','team_division','team_conf','week','season_type','stat_label','football_value','fantasy_points']],
+    roster[['player_id','team_abbr','position','player_name']],
+    how="left",
+    on=['player_id'],
+  )
+
+  # create lookup_string
+  df['lookup_string'] = df['position'] + ", " + df['team_abbr_x'] + ": " + df['player_name'] + " (" + df['team_division'] + ")"
+
+  df['subsequently_traded'] = False # default
+  df.loc[df['team_abbr_x']!=df['team_abbr_y'],'subsequently_traded'] = True
+  if len(df.loc[df['subsequently_traded']]) > 0:
+    logging.warning("There are players who were subsequently traded.")
+
+  df.rename(columns={'team_abbr_x':'team_abbr'}, inplace=True)
+  df = df.drop(['team_abbr_y'], axis=1)
+
+  if not df['player_name'].notnull().all(): 
     logging.warning("There are stat rows that did not join with a row in the roster data frame.")
 
   df = df[[
@@ -121,6 +143,7 @@ def offense_stats(file : str,
     'player_id', 
     'player_name', 
     'lookup_string', 
+    'subsequently_traded',
     'stat_label',
     'football_value', 
     'fantasy_points'
@@ -133,6 +156,7 @@ def offense_stats(file : str,
 def kicker_stats(file : str, 
         season_type, 
         roster : pd.DataFrame, 
+        teams : pd.DataFrame,
         data_path = './Data/') -> pd.DataFrame:
   df = pd.read_parquet(data_path + file, engine='pyarrow')
   df.loc[df['season_type']=='REG','season_type'] = 'Regular'
@@ -181,14 +205,34 @@ def kicker_stats(file : str,
   
   df.loc[df['fantasy_points'].isna(),'fantasy_points'] = 0 # fill in any NaNs if a rule did not apply
 
+  # add in team information
   df = pd.merge(
     df[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_points']],
-    roster[['player_id','team_abbr','team_division','team_conf','lookup_string','position','player_name']],
+    teams[['team_abbr','team_division','team_conf']],
     how="left",
-    on=['player_id','team_abbr'],
+    on='team_abbr',
   )
 
-  if df['lookup_string'].notnull().all(): 
+  # add in player information
+  df = pd.merge(
+    df[['player_id','team_abbr','team_division','team_conf','week','season_type','stat_label','football_value','fantasy_points']],
+    roster[['player_id','team_abbr','position','player_name']],
+    how="left",
+    on=['player_id'],
+  )
+
+  # create lookup_string
+  df['lookup_string'] = df['position'] + ", " + df['team_abbr_x'] + ": " + df['player_name'] + " (" + df['team_division'] + ")"
+
+  df['subsequently_traded'] = False # default
+  df.loc[df['team_abbr_x']!=df['team_abbr_y'],'subsequently_traded'] = True
+  if len(df.loc[df['subsequently_traded']]) > 0:
+    logging.warning("There are players who were subsequently traded.")
+
+  df.rename(columns={'team_abbr_x':'team_abbr'}, inplace=True)
+  df = df.drop(['team_abbr_y'], axis=1)
+
+  if not df['player_name'].notnull().all(): 
     logging.warning("There are stat rows that did not join with a row in the roster data frame.")
 
   df = df[[
@@ -201,6 +245,7 @@ def kicker_stats(file : str,
     'player_id', 
     'player_name', 
     'lookup_string', 
+    'subsequently_traded',
     'stat_label',
     'football_value', 
     'fantasy_points'
@@ -210,7 +255,7 @@ def kicker_stats(file : str,
 
 # %%
 def play_by_plays(file : str, 
-        season_type,
+        season_type, 
         path : str = './Data/') -> pd.DataFrame:
   pbp = pd.read_parquet(path = path + file, engine='pyarrow')
   pbp.loc[(pbp['season_type']=="REG"),'season_type'] = "Regular"
@@ -292,6 +337,7 @@ pbp = play_by_plays('play_by_play_2024, 2024-10-28 052227 EDT.parquet', ['Regula
 def offense_bonus(file : str, 
         season_type,
         roster : pd.DataFrame,
+        teams : pd.DataFrame,
         path : str = './Data/') -> pd.DataFrame:
 
   # create the play-by-play data that will be used to determine the bonuses      
@@ -350,14 +396,34 @@ def offense_bonus(file : str,
            forty_yd_plus_kickoff_return_td_bonus, 
            forty_yd_plus_punt_return_td_bonus])
 
+  # add in team information
   df = pd.merge(
     df[['player_id','team_abbr','week','season_type','stat_label','football_value','fantasy_points']],
-    roster[['player_id','team_abbr','team_division','team_conf','lookup_string','position','player_name']],
+    teams[['team_abbr','team_division','team_conf']],
     how="left",
-    on=['player_id','team_abbr'],
+    on='team_abbr',
   )
 
-  if df['lookup_string'].notnull().all(): 
+  # add in player information
+  df = pd.merge(
+    df[['player_id','team_abbr','team_division','team_conf','week','season_type','stat_label','football_value','fantasy_points']],
+    roster[['player_id','team_abbr','position','player_name']],
+    how="left",
+    on=['player_id'],
+  )
+
+  # create lookup_string
+  df['lookup_string'] = df['position'] + ", " + df['team_abbr_x'] + ": " + df['player_name'] + " (" + df['team_division'] + ")"
+
+  df['subsequently_traded'] = False # default
+  df.loc[df['team_abbr_x']!=df['team_abbr_y'],'subsequently_traded'] = True
+  if len(df.loc[df['subsequently_traded']]) > 0:
+    logging.warning("There are players who were subsequently traded.")
+
+  df.rename(columns={'team_abbr_x':'team_abbr'}, inplace=True)
+  df = df.drop(['team_abbr_y'], axis=1)
+
+  if not df['player_name'].notnull().all(): 
     logging.warning("There are stat rows that did not join with a row in the roster data frame.")
 
   df = df[[
@@ -370,6 +436,7 @@ def offense_bonus(file : str,
     'player_id', 
     'player_name', 
     'lookup_string', 
+    'subsequently_traded',
     'stat_label',
     'football_value', 
     'fantasy_points'
@@ -381,7 +448,7 @@ def offense_bonus(file : str,
   df_ex = df.loc[np.logical_not(df['position'].isin(['QB','RB','WR','TE']))]
 
   if len(df_ex) > 0:
-    logging.warning("There are df excluded because the position is out of scope:")
+    logging.warning("There are rows excluded because the position is out of scope:")
     logging.warning(df_ex)
 
   df_in = df_in.sort_values(by=['week','position'])
@@ -499,13 +566,16 @@ def defense_bonus(file : str,
 
   teams = teams[['team_abbr', 'team_name', 'team_conf', 'team_division', 'lookup_string']].drop_duplicates()
 
-  # # erge in additional team data
+  # merge in additional team data
   df = pd.merge(
     df,
     teams,
     how = 'left',
     on = 'team_abbr'
   )
+
+  # add in final column that isn't applicable for defensive stats
+  df['subsequently_traded'] = False
 
   df = df.rename(columns = {'team_name':'player_name'})
   
@@ -519,6 +589,7 @@ def defense_bonus(file : str,
     'player_id', 
     'player_name', 
     'lookup_string', 
+    'subsequently_traded',
     'stat_label',
     'football_value', 
     'fantasy_points'
@@ -576,13 +647,16 @@ def defense_stats(file : str,
 
   teams = teams[['team_abbr', 'team_name', 'team_conf', 'team_division', 'lookup_string']].drop_duplicates()
 
-  # # erge in additional team data
+  # meerge in additional team data
   df = pd.merge(
     df,
     teams,
     how = 'left',
     on = 'team_abbr'
   )
+
+  # add in final column that isn't applicable for defensive stats
+  df['subsequently_traded'] = False
 
   df = df.rename(columns = {'team_name':'player_name'})
   
@@ -596,6 +670,7 @@ def defense_stats(file : str,
     'player_id', 
     'player_name', 
     'lookup_string', 
+    'subsequently_traded',
     'stat_label',
     'football_value', 
     'fantasy_points'
