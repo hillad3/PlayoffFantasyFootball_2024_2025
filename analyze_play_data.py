@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import nfl_data_py as nfl
+from datetime import datetime
 import logging
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.WARNING, datefmt='%Y-%m-%d %I:%M %p')
 
@@ -56,7 +57,7 @@ df_stats = pd.concat([
   k,
   d,
   d_bonus
-])
+], ignore_index=True)
 
 # clean up environment
 del [[
@@ -67,7 +68,6 @@ del [[
   d_bonus
 ]]
 
-# %%
 fantasy_roster_file = "Consolidated Rosters, Gen 2024-09-29 0926.csv"
 fantasy_rosters = pd.read_csv(data_path + fantasy_roster_file, engine="pyarrow")
 
@@ -96,31 +96,54 @@ if (fantasy_rosters.columns == list(col_names.keys())).all():
 o = (
   fantasy_rosters
   .query("position_code != 'D'")
+  .drop('team_abbr', axis=1) # this will come from df_stats
   .merge(
     df_stats.query("player_id != 'N/A'"), # exclude defense rows
-    how = 'outer',
+    how = 'left',
     on = 'player_id'
   )
+  .loc[lambda x: x.stat_label.notnull(),:] # exclude rows where there was no data to join
 )
 
 d = (
   fantasy_rosters
   .query("position_code == 'D'")
+  .drop('player_id', axis=1) # this will come from df_stats
   .merge(
     df_stats.query("player_id == 'N/A'"), # include only defense rows
-    how = 'outer',
+    how = 'left',
     on = 'team_abbr'
   )
 )
 
+# %%
+df_fantasy_points = pd.concat([o.astype({"subsequently_traded":bool}),d.astype({"subsequently_traded":bool})], ignore_index=True)
+df_fantasy_points = df_fantasy_points[[
+  'roster_index',
+  'position_code',
+  'fantasy_owner',
+  'fantasy_team',
+  'season_type',
+  'week',
+  'team_abbr',
+  'team_conf',
+  'team_division',
+  'position_type',
+  'position',
+  'player_id',
+  'player_name',
+  'lookup_string',
+  'subsequently_traded',
+  'stat_label',
+  'football_value',
+  'fantasy_points',
+]]
+df_fantasy_points.sort_values(['fantasy_team','fantasy_owner','roster_index'])
 
-# TODO need to figure out why there are N/As. I think because of players changing teams so need to consider how to do joins and which team_abbr to use (even if that doesn't align with the lookup_string)
+del([o, d])
 
+# %%
+output_file_name = f"Scored NFL Fantasy Rosters for {season_year}-{season_year+1} as of {datetime.today().strftime('%Y-%m-%d %H%M')}.parquet"
 
-# output_file <- paste0(
-#   "Data/Output/Scored Rosters/NFL Fantasy Scores for 2023-2024 as of ",
-#   str_remove_all(Sys.time(), ":"),
-#   ".csv"
-# )
-
-# fwrite(scored_rosters, output_file)
+# %%
+df_fantasy_points.to_parquet(data_path + output_file_name, engine='pyarrow')
