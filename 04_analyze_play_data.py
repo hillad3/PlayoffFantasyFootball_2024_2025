@@ -1,9 +1,8 @@
 # %%
 import pandas as pd
-import numpy as np
-import nfl_data_py as nfl
 from datetime import datetime
 import logging
+import importlib
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
@@ -11,8 +10,8 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %I:%M %p",
 )
 
-# %% custom scripts for my project
-import make_play_data
+# %% custom scripts for my project. Use import_module() since it starts with a number
+make_play_data = importlib.import_module(name = '02_make_play_data')
 
 # %%
 season_type = [
@@ -40,36 +39,37 @@ playoff_teams = [
     "GB",
 ]
 
+
 # %%
 teams = make_play_data.teams(season_year=season_year)
 
 # %% list of team names
 season_teams = teams["team_abbr"].to_list()
 
-# %%
-roster_file = "roster_2024, 2024-10-28 031411 EDT.parquet"
+# %% update this to refresh data
+roster_file = "roster_2024, 2024-12-20 021221 EST.parquet"
 roster = make_play_data.rosters(file=roster_file, teams=teams)
 
 # %%
-k_file = "player_stats_kicking_2024, 2024-10-28 052851 EDT.parquet"
+k_file = "player_stats_kicking_2024, 2024-12-20 042746 EST.parquet"
 k = make_play_data.kicker_stats(
     file=k_file, season_type=season_type, roster=roster, teams=teams
 )
 
 # %%
-o_file = "player_stats_2024, 2024-10-28 052851 EDT.parquet"
+o_file = "player_stats_2024, 2024-12-20 042746 EST.parquet"
 o = make_play_data.offense_stats(
     file=o_file, season_type=season_type, roster=roster, teams=teams
 )
 
 # %%
-d_file = "play_by_play_2024, 2024-10-28 052227 EDT.parquet"
+d_file = "play_by_play_2024, 2024-12-20 042156 EST.parquet"
 d = make_play_data.defense_stats(
     file=d_file, season_type=season_type, teams=teams
 )  # this function is not complete
 
 # %%
-pbp_file = "play_by_play_2024, 2024-10-28 052227 EDT.parquet"
+pbp_file = "play_by_play_2024, 2024-12-20 042156 EST.parquet"
 pbp = make_play_data.play_by_plays(file=pbp_file, season_type=season_type)
 o_bonus = make_play_data.offense_bonus(
     file=pbp_file, season_type=season_type, roster=roster, teams=teams
@@ -85,7 +85,8 @@ df_stats = pd.concat([o, o_bonus, k, d, d_bonus], ignore_index=True)
 # clean up environment
 del [[o, o_bonus, k, d, d_bonus]]
 
-fantasy_roster_file = "Consolidated Rosters, Gen 2024-09-29 0926.csv"
+# %% update file name
+fantasy_roster_file = "Consolidated Rosters, Gen 2024-12-20 1322.csv"
 fantasy_rosters = pd.read_csv(data_path + fantasy_roster_file, engine="pyarrow")
 
 # dict to check and replace column names
@@ -169,3 +170,5 @@ output_file_name = f"Scored NFL Fantasy Rosters for {season_year}-{season_year+1
 
 # %%
 df_fantasy_points.to_parquet(data_path + output_file_name, engine="pyarrow")
+
+# %%
