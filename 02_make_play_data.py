@@ -2,7 +2,6 @@
 import pandas as pd
 import nfl_data_py as nfl
 import numpy as np
-from functools import reduce
 import logging
 
 
@@ -534,11 +533,6 @@ def play_by_plays(file: str, season_type, path: str = "./Data/") -> pd.DataFrame
         ]
     ]
     return pbp
-
-
-pbp = play_by_plays(
-    "play_by_play_2024, 2024-10-28 052227 EDT.parquet", ["Regular", "Post"]
-)
 
 
 # %%
@@ -1187,3 +1181,5 @@ def defense_stats(
     ]
 
     return df
+
+# %%
