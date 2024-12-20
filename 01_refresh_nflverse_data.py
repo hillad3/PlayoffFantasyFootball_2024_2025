@@ -25,7 +25,7 @@ player_stats_kicking_url = 'https://github.com/nflverse/nflverse-data/releases/d
 
 # the teams data is mostly static for each year, so this does not need to be updated frequently
 teams_url = 'https://github.com/nflverse/nfldata/blob/master/data/teams.csv?raw=true'
-refresh_teams = False
+refresh_teams = True
 
 # local filePath helper
 data_path = './Data/'
